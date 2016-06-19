@@ -10,6 +10,7 @@
 
 #include "CentralDefine.h"
 
+#define TCP_LIS_PORT 62533
 #ifndef _CENTRAL_HOST_
 #define UDP_RECV_PORT 62536
 #define UDP_SEND_PORT 62535
@@ -41,6 +42,7 @@ public:
 		m_pfun = func;
 	}
 	static volatile int mErrState;
+	static volatile int m_bTCP;
 protected:
 
 	UdpSender();
@@ -53,10 +55,12 @@ protected:
 	static void SleepMs(unsigned long ms){::usleep(ms*1000);}
 	static void* _RecvProc(void * lParam);
 	static void* _SendProc(void * lParam);
+	static void* _TCPrecv(void * lParam);
 
 	static UdpSender* mCPtr;
 	pthread_t m_sendTId;
 	pthread_t m_recvTId;
+	pthread_t m_TCPrecvTId;
 	TRANSCALLBACK m_pfun;
 	std::deque <SENDCMDHDR> gCommandQue;
 	std::deque <SENDCMDHDR> gSendQue;

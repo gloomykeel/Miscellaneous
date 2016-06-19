@@ -104,6 +104,7 @@ u_short gstringTodefineValue(std::string & str)
 
 UdpSender* UdpSender::mCPtr = NULL;
 volatile int UdpSender::mErrState = 0;
+volatile int UdpSender::m_bTCP = 0;
 
 UdpSender* UdpSender::GetMainPtr()
 {
@@ -133,12 +134,19 @@ UdpSender::UdpSender()
 		UdpSender::mErrState = ERR_THREAD;
 	}
 	SleepMs(10);
+	if (pthread_create(&m_TCPrecvTId, NULL, _TCPrecv, this))
+	{
+		std::cout << "Create thread failed!" << std::endl;
+		UdpSender::mErrState = ERR_THREAD;
+	}
+	SleepMs(10);
 }
 
 UdpSender::~UdpSender()
 {
 	pthread_join(m_sendTId, NULL);
 	pthread_join(m_recvTId, NULL);
+	pthread_join(m_TCPrecvTId, NULL);
 	pthread_mutex_destroy(&mutex);
 	if(UdpSender::mCPtr)
 	{
@@ -214,7 +222,7 @@ int UdpSender::_ReadXmlFile(char* szFileName)
 				switch (commandtypeid)
 				{
 				case(KL_Projector) :
-				tmpCmdHdr.cmdHdr.DeviceClass = KL_Projector;
+						tmpCmdHdr.cmdHdr.DeviceClass = KL_Projector;
 				tmpCmdHdr.cmdHdr.addrType    = eComm;
 				if(!Type.compare("portnumber"))
 				{
@@ -236,7 +244,7 @@ int UdpSender::_ReadXmlFile(char* szFileName)
 				}
 				break;
 				case(KL_PLC) :
-                tmpCmdHdr.cmdHdr.DeviceClass = KL_PLC;
+                		tmpCmdHdr.cmdHdr.DeviceClass = KL_PLC;
 				tmpCmdHdr.cmdHdr.addrType = eComm;
 				if(!Type.compare("portnumber"))
 				{
@@ -258,7 +266,7 @@ int UdpSender::_ReadXmlFile(char* szFileName)
 				}
 				break;
 				case(KL_CircuitFlash) :
-                tmpCmdHdr.cmdHdr.DeviceClass = KL_CircuitFlash;
+                		tmpCmdHdr.cmdHdr.DeviceClass = KL_CircuitFlash;
 				tmpCmdHdr.cmdHdr.addrType = eComm;
 				if(!Type.compare("portnumber"))
 				{
@@ -274,7 +282,7 @@ int UdpSender::_ReadXmlFile(char* szFileName)
 				}
 				break;
 				case(KL_IR) :
-                tmpCmdHdr.cmdHdr.DeviceClass = KL_IR;
+                		tmpCmdHdr.cmdHdr.DeviceClass = KL_IR;
 				tmpCmdHdr.cmdHdr.addrType = eComm;
 				if(!Type.compare("portnumber"))
 				{
@@ -294,7 +302,7 @@ int UdpSender::_ReadXmlFile(char* szFileName)
 				}
 				break;
 				case(KL_USER_com) :
-                tmpCmdHdr.cmdHdr.DeviceClass = KL_USER;
+                		tmpCmdHdr.cmdHdr.DeviceClass = KL_USER;
 				tmpCmdHdr.cmdHdr.addrType = eComm;
 				memcpy(tmpCmdHdr.cmdHdr.AppType,"usrcom",sizeof("usrcom"));
 				if(!Type.compare("portnumber"))
@@ -313,7 +321,7 @@ int UdpSender::_ReadXmlFile(char* szFileName)
 				}
 				break;
 				case(KL_USER_socket) :
-				tmpCmdHdr.cmdHdr.DeviceClass = KL_USER;
+						tmpCmdHdr.cmdHdr.DeviceClass = KL_USER;
 				tmpCmdHdr.cmdHdr.addrType = eSock;
 				memcpy(tmpCmdHdr.cmdHdr.AppType,"usrsock",sizeof("usrsock"));
 				if(!Type.compare("ip"))
@@ -336,7 +344,7 @@ int UdpSender::_ReadXmlFile(char* szFileName)
 				}
 				break;
 				case(KLPC_PCCommand) :
-                tmpCmdHdr.cmdHdr.DeviceClass = KL_PC;
+                		tmpCmdHdr.cmdHdr.DeviceClass = KL_PC;
 				tmpCmdHdr.cmdHdr.addrType = eSock;
 				tmpCmdHdr.cmdHdr.subAddress = 62537;
 				memcpy(tmpCmdHdr.cmdHdr.AppType,"pccmd",sizeof("pccmd"));
@@ -362,7 +370,7 @@ int UdpSender::_ReadXmlFile(char* szFileName)
 				}
 				break;
 				case(KLSOFT_video) :
-                tmpCmdHdr.cmdHdr.DeviceClass = KL_PC;
+                		tmpCmdHdr.cmdHdr.DeviceClass = KL_PC;
 				tmpCmdHdr.cmdHdr.addrType = eSock;
 				tmpCmdHdr.cmdHdr.subAddress = 62537;
 				memcpy(tmpCmdHdr.cmdHdr.AppType,"softvideo",sizeof("softvideo"));
@@ -388,7 +396,7 @@ int UdpSender::_ReadXmlFile(char* szFileName)
 				}
 				break;
 				case(KL_MTX) :
-                tmpCmdHdr.cmdHdr.DeviceClass = KL_MTX;
+                		tmpCmdHdr.cmdHdr.DeviceClass = KL_MTX;
 				tmpCmdHdr.cmdHdr.addrType = eComm;
 				if(!Type.compare("portnumber"))
 				{
@@ -499,6 +507,11 @@ void* UdpSender::_RecvProc(void * lParam)
 			{
 				if(-1<recvfrom(tSock, cBuf, 1400, 0, (sockaddr*)&tInAddr, &len))
 				{
+					if(0xABCDEFFE==*((u_long*)cBuf))
+					{
+						UdpSender::m_bTCP = 1;
+					}
+
 					if (((UdpSender*)lParam)->m_pfun)
 					{
 						(*((UdpSender*)lParam)->m_pfun)(((pCMDHDR)cBuf)->cmdLen, ((pCMDHDR)cBuf)->valLen);
@@ -564,4 +577,185 @@ void* UdpSender::_SendProc(void * lParam)
 		memset(cBuf,0,sizeof(cBuf));
 	}
 	return 0;
+}
+
+#include <sys/fcntl.h>
+#include <fstream>
+void* UdpSender::_TCPrecv(void * lParam)
+{
+	int rcd;
+	int new_cli_fd;
+	int maxfd;
+	unsigned int socklen;
+	int server_len;
+	int ci;
+	int watch_fd_list[2];
+	int backlog = 2;
+
+	std::fstream fout;
+
+	while(!UdpSender::m_bTCP) ::usleep(1000);
+	UdpSender::m_bTCP = 0;
+
+	for (ci = 0; ci <= backlog; ci++)
+		watch_fd_list[ci] = -1;
+
+	int server_sockfd;
+	//建立socket，类型为TCP流
+	server_sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (server_sockfd == -1) {
+		printf("create server_socket error!\n");
+		UdpSender::mErrState = ERR_SOCK;
+		return (void*)&UdpSender::mErrState;
+	}
+
+	//设为非阻塞
+	if (fcntl(server_sockfd, F_SETFL, O_NONBLOCK) == -1) {
+		printf("Set server socket nonblock failed\n");
+		UdpSender::mErrState = ERR_SOCK;
+		return (void*)&UdpSender::mErrState;
+	}
+
+	struct sockaddr_in server_sockaddr;
+	memset(&server_sockaddr, 0, sizeof(server_sockaddr));
+	server_sockaddr.sin_family = AF_INET;
+	server_sockaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+	//设置监听端口
+	server_sockaddr.sin_port = htons(TCP_LIS_PORT);
+	server_len = sizeof(server_sockaddr);
+	//绑定
+	rcd = bind(server_sockfd, (struct sockaddr *) &server_sockaddr, server_len);
+	if (rcd == -1) {
+		printf("bind port %d error!\n", ntohs(server_sockaddr.sin_port));
+		UdpSender::mErrState = ERR_SOCK;
+		return (void*)&UdpSender::mErrState;
+	}
+	//监听
+	rcd = listen(server_sockfd, backlog);
+	if (rcd == -1) {
+		printf("listen error!\n");
+		UdpSender::mErrState = ERR_SOCK;
+		return (void*)&UdpSender::mErrState;
+	}
+	printf("Server is  waiting on socket=%d \n", server_sockfd);
+
+	watch_fd_list[0] = server_sockfd;
+	maxfd = server_sockfd;
+
+	//初始化监听集合
+	fd_set watchset;
+	FD_ZERO(&watchset);
+	FD_SET(server_sockfd, &watchset);
+
+	struct timeval tv; /* 声明一个时间变量来保存时间 */
+	struct sockaddr_in cli_sockaddr;
+	tv.tv_sec = 0;
+	tv.tv_usec = 500;/* 设置select等待的最大时间*/
+	while(!UdpSender::mErrState){
+		//每次都要重新设置集合才能激发事件
+		FD_ZERO(&watchset);
+		FD_SET(server_sockfd, &watchset);
+		//对已存在到socket重新设置
+		for (ci = 0; ci <= backlog; ci++)
+			if (watch_fd_list[ci] != -1) {
+				FD_SET(watch_fd_list[ci], &watchset);
+			}
+
+		rcd = select(maxfd + 1, &watchset, NULL, NULL, &tv);
+		switch (rcd) {
+		case -1:
+			printf("Select error\n");
+			UdpSender::mErrState = ERR_SELECT;
+			return (void*)&UdpSender::mErrState;
+		case 0:
+			printf("Select time_out\n");
+			//超时则清理掉所有集合元素并关闭所有与客户端的socket
+			FD_ZERO(&watchset);
+			for (ci = 1; ci <= backlog; ci++){
+				shutdown(watch_fd_list[ci],2);
+				watch_fd_list[ci] = -1;
+			}
+			//重新设置监听socket，等待链接
+			FD_CLR(server_sockfd, &watchset);
+			FD_SET(server_sockfd, &watchset);
+			continue;
+		default:
+			//检测是否有新连接建立
+			if (FD_ISSET(server_sockfd, &watchset)) { //new connection
+				socklen = sizeof(cli_sockaddr);
+				new_cli_fd = accept(server_sockfd,(sockaddr *) &cli_sockaddr, &socklen);
+				if (new_cli_fd < 0) {
+					printf("Accept error\n");
+					UdpSender::mErrState = ERR_SOCK;
+					return (void*)&UdpSender::mErrState;
+				}
+				printf("\nopen communication with  Client %s on socket %d\n",
+						inet_ntoa(cli_sockaddr.sin_addr), new_cli_fd);
+
+				for (ci = 1; ci <= backlog; ci++) {
+					if (watch_fd_list[ci] == -1) {
+						watch_fd_list[ci] = new_cli_fd;
+						break;
+					}
+				}
+
+				FD_SET(new_cli_fd, &watchset);
+				if (maxfd < new_cli_fd) {
+					maxfd = new_cli_fd;
+				}
+
+				fout.open("commands.xml",std::ios_base::out|std::ios_base::binary);
+				continue;
+			} else {//已有连接的数据通信
+				//遍历每个设置过的集合元素
+				for (ci = 1; ci <= backlog; ci++) { //data
+					if (watch_fd_list[ci] == -1)
+						continue;
+					if (!FD_ISSET(watch_fd_list[ci], &watchset)) {
+						continue;
+					}
+					char buffer[1400];
+					//接收
+					int len = recv(watch_fd_list[ci], buffer, 1400, 0);
+					if (len < 0) {
+						printf("Recv error\n");
+						UdpSender::mErrState = ERR_SOCK;
+						return (void*)&UdpSender::mErrState;
+					}
+					else if(0==len)
+					{
+						fout.close();
+						//接收到的是关闭命令
+						for (ci = 0; ci <= backlog; ci++)
+							if (watch_fd_list[ci] != -1) {
+								shutdown(watch_fd_list[ci],2);
+							}
+						printf("\nWeb Server Quit!\n");
+						UdpSender::mErrState = ERR_STOP;
+						return (void*)&UdpSender::mErrState;
+					}
+					buffer[len] = 0;
+					if(fout.is_open())
+					{
+						fout.write(buffer,len);
+						fout.flush();
+					}
+					else
+					{
+						fout.close();
+						UdpSender::mErrState = ERR_FILE;
+					}
+				}
+			}
+			break;
+		}
+	}
+
+	for (ci = 0; ci <= backlog; ci++){
+		shutdown(watch_fd_list[ci],2);
+		watch_fd_list[ci] = -1;
+	}
+	fout.close();
+
+	return (void*)&UdpSender::mErrState;
 }

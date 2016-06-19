@@ -41,6 +41,7 @@ typedef struct tagCmdHdr{
 #define ERR_DUP 0x05
 #define ERR_SELECT 0x06
 #define ERR_SEND 0x07
+#define ERR_FILE 0x08
 #define ERR_STOP 0xF0
 #define ERR_UNKOWN 0xFF
 
