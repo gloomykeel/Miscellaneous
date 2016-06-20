@@ -24,9 +24,14 @@ int SetCallBack(TRANSCALLBACK func)
 	return 0;
 }
 
-int StartTransmission()
+int StartTransmission(char* cp, int n)
 {
-	UdpSender::GetMainPtr();
+	UdpSender* p = UdpSender::GetMainPtr();
+	if(p)
+	{
+		p->SetFilePath(cp,n);
+		return p->initT();
+	}
 	return UdpSender::mErrState;
 }
 
@@ -44,6 +49,12 @@ int SendCommandsById(u_int groupId)
 		p->SendCommandsById(groupId);
 	}
 	return UdpSender::mErrState;
+}
+
+int SetUpdate(int val)
+{
+	UdpSender::m_bUpdate = val;
+	return 0;
 }
 
 u_short gstringTodefineValue(std::string & str)
@@ -104,7 +115,7 @@ u_short gstringTodefineValue(std::string & str)
 
 UdpSender* UdpSender::mCPtr = NULL;
 volatile int UdpSender::mErrState = 0;
-volatile int UdpSender::m_bTCP = 0;
+volatile int UdpSender::m_bUpdate = 0;
 
 UdpSender* UdpSender::GetMainPtr()
 {
@@ -115,13 +126,10 @@ UdpSender* UdpSender::GetMainPtr()
 	return UdpSender::mCPtr;
 }
 
-UdpSender::UdpSender()
+int UdpSender::initT()
 {
-	m_pfun = NULL;
-	pthread_mutex_init(&mutex,NULL);
-	// TODO 读取文件路径输入问题
-	_ReadXmlFile("commands.xml");
-	if(UdpSender::mErrState) return;
+	_ReadXmlFile(mfilePath);
+	if(UdpSender::mErrState) return UdpSender::mErrState;
 	if (pthread_create(&m_sendTId, NULL, _RecvProc, this))
 	{
 		std::cout << "Create thread failed!" << std::endl;
@@ -140,6 +148,15 @@ UdpSender::UdpSender()
 		UdpSender::mErrState = ERR_THREAD;
 	}
 	SleepMs(10);
+	return UdpSender::mErrState;
+}
+
+UdpSender::UdpSender()
+{
+	m_sendTId = m_recvTId = m_TCPrecvTId = 0;
+	m_pfun = NULL;
+	memset(mfilePath,0,sizeof(mfilePath));
+	pthread_mutex_init(&mutex,NULL);
 }
 
 UdpSender::~UdpSender()
@@ -153,6 +170,16 @@ UdpSender::~UdpSender()
 		delete UdpSender::mCPtr;
 		UdpSender::mCPtr = NULL;
 	}
+}
+
+int UdpSender::SetFilePath(char* p, int n)
+{
+	if(n<256)
+	{
+		memcpy(mfilePath,p,n);
+		return 0;
+	}
+	return -1;
 }
 
 bool UdpSender::findGroupId(int id)
@@ -493,6 +520,12 @@ void* UdpSender::_RecvProc(void * lParam)
 	tv.tv_usec = 500;
 	while(!UdpSender::mErrState)
 	{
+		if(UdpSender::m_bUpdate)
+		{
+			::usleep(1000);
+			continue;
+		}
+
 		FD_ZERO(&fds); //每次循环都要清空集合，否则不能检测描述符变化
 		FD_SET(tSock,&fds); //添加描述符
 		switch(select(tSock+1, &fds, NULL, NULL, &tv)) //select使用
@@ -509,7 +542,7 @@ void* UdpSender::_RecvProc(void * lParam)
 				{
 					if(0xABCDEFFE==*((u_long*)cBuf))
 					{
-						UdpSender::m_bTCP = 1;
+						UdpSender::m_bUpdate = 1;
 					}
 
 					if (((UdpSender*)lParam)->m_pfun)
@@ -534,11 +567,11 @@ void* UdpSender::_SendProc(void * lParam)
 	char cBuf[1400]={0};
 	sockaddr_in addrTo={0};
 	UdpSender* sp = (UdpSender*)lParam;
-	//TODO 地址和端口，默认地址需要配置文件保存设置
+	//TODO 地址，默认地址需要配置文件保存设置
 	memcpy(&addrTo,&sp->m_addrTo,sizeof(sockaddr_in));
 	pthread_mutex_t * pMutex = &sp->mutex;
 	addrTo.sin_family = AF_INET;
-	addrTo.sin_addr.s_addr = inet_addr("127.0.0.1");//server的地址
+	addrTo.sin_addr.s_addr = inet_addr("192.168.127.1");//server的地址
 	addrTo.sin_port = htons(UDP_SEND_PORT);//server的监听端口
 
 	int sendSock = -1;
@@ -550,6 +583,11 @@ void* UdpSender::_SendProc(void * lParam)
 
 	while(!UdpSender::mErrState)
 	{
+		if(UdpSender::m_bUpdate)
+		{
+			::usleep(1000);
+			continue;
+		}
 		pthread_mutex_lock(pMutex);
 		int queLen = sp->gSendQue.size();
 		pSENDCMDHDR pHdr = NULL;
@@ -594,8 +632,7 @@ void* UdpSender::_TCPrecv(void * lParam)
 
 	std::fstream fout;
 
-	while(!UdpSender::m_bTCP) ::usleep(1000);
-	UdpSender::m_bTCP = 0;
+	while(!UdpSender::m_bUpdate) ::usleep(1000);
 
 	for (ci = 0; ci <= backlog; ci++)
 		watch_fd_list[ci] = -1;
@@ -731,7 +768,8 @@ void* UdpSender::_TCPrecv(void * lParam)
 								shutdown(watch_fd_list[ci],2);
 							}
 						printf("\nWeb Server Quit!\n");
-						UdpSender::mErrState = ERR_STOP;
+						UdpSender::mErrState = 0;
+						UdpSender::m_bUpdate = 0;
 						return (void*)&UdpSender::mErrState;
 					}
 					buffer[len] = 0;
@@ -757,5 +795,6 @@ void* UdpSender::_TCPrecv(void * lParam)
 	}
 	fout.close();
 
+	UdpSender::m_bUpdate = 0;
 	return (void*)&UdpSender::mErrState;
 }

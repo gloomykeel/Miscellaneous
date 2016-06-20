@@ -12,12 +12,14 @@ int DataHandler(u_int cmdId, u_int param)
 
 int main()
 {
-	StartTransmission();
+	int x = sizeof(CMDHDR);
+	//StartTransmission();
 	SetCallBack(DataHandler);
-	SendCommandsById(1);
-	while(1)
+	x=5;
+	while(x--)
 	{
-		usleep(1000);
+		usleep(1000*1000);
+		SendCommandsById(1);
 	}
 	return 0;
 }

@@ -2,6 +2,8 @@
 #ifndef __CENTRALDEF__
 #define __CENTRALDEF__
 
+#pragma pack(1)
+
 // defines 可采用excel生成
 #define KL_STATE    				0xFF
 #define KL_Projector				0x01
@@ -25,8 +27,8 @@ typedef struct tagCmdHdr{
     unsigned char DeviceClass;   // 设备类 projector/IR/PC...
 	unsigned char GroupId;       // id
     AddrType addrType;  // 地址类型，com 或者 ip
-    unsigned long address;       // 地址，若是IP地址，则为long型，若为com地址，则为主线号
-    unsigned long subAddress;    // 端口，IP端口或者com的位置
+    unsigned int address;       // 地址，若是IP地址，则为long型，若为com地址，则为主线号
+    unsigned int subAddress;    // 端口，IP端口或者com的位置
     char AppType[128];  // 软件类型/或者设备的型号
     unsigned short cmdLen;        // 命令长度
     unsigned char cmdBuf[128];   // 命令字符串
@@ -47,8 +49,9 @@ typedef struct tagCmdHdr{
 
 typedef int (*TRANSCALLBACK)(unsigned int cmdId, unsigned int param);
 
-int StartTransmission();
+int StartTransmission(char* cp, int n);
 int StopTransmission();
+int SetUpdate(int);
 int SetCallBack(TRANSCALLBACK func);
 int SendCommandsById(unsigned int);
 

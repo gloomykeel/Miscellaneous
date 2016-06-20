@@ -41,8 +41,13 @@ public:
 	{
 		m_pfun = func;
 	}
+
+	int SetFilePath(char* p, int n);
+
+	int initT();
+
 	static volatile int mErrState;
-	static volatile int m_bTCP;
+	static volatile int m_bUpdate;
 protected:
 
 	UdpSender();
@@ -66,6 +71,7 @@ protected:
 	std::deque <SENDCMDHDR> gSendQue;
 	pthread_mutex_t mutex;// = PTHREAD_MUTEX_INITIALIZER;
 	sockaddr_in m_addrTo;
+	char mfilePath[256];
 };
 
 #endif /* UDPSENDER_H_ */
