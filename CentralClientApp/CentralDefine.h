@@ -2,7 +2,7 @@
 #ifndef __CENTRALDEF__
 #define __CENTRALDEF__
 
-#pragma pack(1)
+#pragma pack()
 
 // defines 可采用excel生成
 #define KL_STATE    				0xFF
