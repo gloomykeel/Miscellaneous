@@ -630,8 +630,10 @@ void* UdpSender::_TCPrecv(void * lParam)
 	int watch_fd_list[2];
 	int backlog = 2;
 
+	char filePath[256]={0};
 	std::fstream fout;
 
+	memcpy(filePath,((UdpSender*)lParam)->mfilePath,256);
 	while(!UdpSender::m_bUpdate) ::usleep(1000);
 
 	for (ci = 0; ci <= backlog; ci++)
@@ -693,7 +695,7 @@ void* UdpSender::_TCPrecv(void * lParam)
 		FD_ZERO(&watchset);
 		FD_SET(server_sockfd, &watchset);
 		//对已存在到socket重新设置
-		for (ci = 0; ci <= backlog; ci++)
+		for (ci = 0; ci < backlog; ci++)
 			if (watch_fd_list[ci] != -1) {
 				FD_SET(watch_fd_list[ci], &watchset);
 			}
@@ -705,13 +707,13 @@ void* UdpSender::_TCPrecv(void * lParam)
 			UdpSender::mErrState = ERR_SELECT;
 			return (void*)&UdpSender::mErrState;
 		case 0:
-			printf("Select time_out\n");
+			printf(".");
 			//超时则清理掉所有集合元素并关闭所有与客户端的socket
 			FD_ZERO(&watchset);
-			for (ci = 1; ci <= backlog; ci++){
+			/*for (ci = 1; ci < backlog; ci++){
 				shutdown(watch_fd_list[ci],2);
 				watch_fd_list[ci] = -1;
-			}
+			}*/
 			//重新设置监听socket，等待链接
 			FD_CLR(server_sockfd, &watchset);
 			FD_SET(server_sockfd, &watchset);
@@ -729,7 +731,7 @@ void* UdpSender::_TCPrecv(void * lParam)
 				printf("\nopen communication with  Client %s on socket %d\n",
 						inet_ntoa(cli_sockaddr.sin_addr), new_cli_fd);
 
-				for (ci = 1; ci <= backlog; ci++) {
+				for (ci = 1; ci < backlog; ci++) {
 					if (watch_fd_list[ci] == -1) {
 						watch_fd_list[ci] = new_cli_fd;
 						break;
@@ -741,11 +743,11 @@ void* UdpSender::_TCPrecv(void * lParam)
 					maxfd = new_cli_fd;
 				}
 
-				fout.open("commands.xml",std::ios_base::out|std::ios_base::binary);
+				fout.open(filePath,std::ios_base::out|std::ios_base::binary);
 				continue;
 			} else {//已有连接的数据通信
 				//遍历每个设置过的集合元素
-				for (ci = 1; ci <= backlog; ci++) { //data
+				for (ci = 1; ci < backlog; ci++) { //data
 					if (watch_fd_list[ci] == -1)
 						continue;
 					if (!FD_ISSET(watch_fd_list[ci], &watchset)) {
@@ -763,7 +765,7 @@ void* UdpSender::_TCPrecv(void * lParam)
 					{
 						fout.close();
 						//接收到的是关闭命令
-						for (ci = 0; ci <= backlog; ci++)
+						for (ci = 0; ci < backlog; ci++)
 							if (watch_fd_list[ci] != -1) {
 								shutdown(watch_fd_list[ci],2);
 							}
@@ -773,6 +775,7 @@ void* UdpSender::_TCPrecv(void * lParam)
 						return (void*)&UdpSender::mErrState;
 					}
 					buffer[len] = 0;
+					printf("\n.%s.\n",buffer);
 					if(fout.is_open())
 					{
 						fout.write(buffer,len);
@@ -789,7 +792,7 @@ void* UdpSender::_TCPrecv(void * lParam)
 		}
 	}
 
-	for (ci = 0; ci <= backlog; ci++){
+	for (ci = 0; ci < backlog; ci++){
 		shutdown(watch_fd_list[ci],2);
 		watch_fd_list[ci] = -1;
 	}

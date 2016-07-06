@@ -15,8 +15,9 @@ int main()
 	int x = sizeof(CMDHDR);
 	//StartTransmission();
 	SetCallBack(DataHandler);
-	x=5;
-	while(x--)
+	x=500;
+	StartTransmission("commands.xml",sizeof("commands.xml"));
+	while(x)
 	{
 		usleep(1000*1000);
 		SendCommandsById(1);
